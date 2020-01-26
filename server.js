@@ -32,8 +32,8 @@ app.get('/events', eventsHandler);
 
 // Location Functions
 function locationHandler(request, response) {
-  let {search_query, formatted_query, latitude, longitude} = request.query;
-  let SQL = `SELECT * FROM locations WHERE city='${search_query}';`;
+  let city = request.query.city;
+  let SQL = `SELECT * FROM locations WHERE city='${city}';`;
   client.query(SQL)
     .then(results => {
       if (results.rows.length > 0) {
@@ -43,23 +43,24 @@ function locationHandler(request, response) {
           // //Getting info for object
           // const city = request.query.city;
           let key = process.env.GEOCODE_API_KEY;
-          let url = `https://us1.locationiq.com/v1/search.php?key=${key}&q=${search_query}&format=json&limit=1`;
+          let url = `https://us1.locationiq.com/v1/search.php?key=${key}&q=${city}&format=json&limit=1`;
           
           superagent.get(url)
             .then(data => {
               const geoData = data.body[0]; //first item
-              const locationData = new Location(search_query, geoData);
+              const locationData = new Location(city, geoData);
+              const {search_query, formatted_query, latitude, longitude} = locationData;
               let apiToSQL = `INSERT INTO locations (city, formattedquery, latitude, longitude) VALUES ('${search_query}', '${formatted_query}', '${latitude}', '${longitude}');`;
 
               client.query(apiToSQL);
-
               response.send(locationData);
             })
-
+            .catch(() => {
+              errorHandler('something went wrong!', request, response);
+            });
         } catch (error) {
           errorHandler('it went wrong.', request, response);
         }
-
       }
     });
 }
@@ -68,7 +69,7 @@ function locationHandler(request, response) {
 
 // Location Object Constructor
 function Location(city, geoData) {
-  this.search_query = city;
+  this.city = city;
   this.formatted_query = geoData.display_name;
   this.latitude = geoData.lat;
   this.longitude = geoData.lon;
@@ -142,4 +143,7 @@ function Event(eventsObj) {
 // Ensure the server is listening for requests
 // ***This must be at the end of the file***
 
-app.listen(PORT, () => console.log(`Server up on port ${PORT}`));
+client.connect()
+  .then(() => {
+    app.listen(PORT, () => console.log(`Server up on port ${PORT}`))
+  });
