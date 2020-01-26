@@ -1,3 +1,4 @@
+/* eslint-disable no-trailing-spaces */
 'use strict';
 
 // Load environment variables from the .env
@@ -7,6 +8,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const superagent = require('superagent');
+const pg = require('pg');
+
+const client = new pg.Client(process.env.DATABASE_URL);
+client.on('error', err => console.err('pg problems', err));
 
 // Application setup
 const app = express();
@@ -17,7 +22,7 @@ app.use(cors());
 // route syntax = app.<operation>('route', callback);
 // Home page route for server testing
 app.get('/', (request, response) => {
-  response.send('home page!!!!');
+  response.send('home page!');
 });
 app.get('/location', locationHandler);
 app.get('/weather', weatherHandler);
@@ -27,23 +32,39 @@ app.get('/events', eventsHandler);
 
 // Location Functions
 function locationHandler(request, response) {
-  try {
-    // //Getting info for object
-    const city = request.query.city;
-    let url = `https://us1.locationiq.com/v1/search.php?key=${process.env.GEOCODE_API_KEY}&q=${city}&format=json&limit=1`;
+  let {search_query, formatted_query, latitude, longitude} = request.query;
+  let SQL = `SELECT * FROM locations WHERE city='${search_query}';`;
+  client.query(SQL)
+    .then(results => {
+      if (results.rows.length > 0) {
+        response.send(results.rows[0]);
+      } else {
+        try {
+          // //Getting info for object
+          // const city = request.query.city;
+          let key = process.env.GEOCODE_API_KEY;
+          let url = `https://us1.locationiq.com/v1/search.php?key=${key}&q=${search_query}&format=json&limit=1`;
+          
+          superagent.get(url)
+            .then(data => {
+              const geoData = data.body[0]; //first item
+              const locationData = new Location(search_query, geoData);
+              let apiToSQL = `INSERT INTO locations (city, formattedquery, latitude, longitude) VALUES ('${search_query}', '${formatted_query}', '${latitude}', '${longitude}');`;
 
-    superagent.get(url)
-      .then(data => {
-        const geoData = data.body[0]; //first item
-        const locationData = new Location(city, geoData);
-        response.send(locationData);
-        // console.log(geoData);
-      })
+              client.query(apiToSQL);
 
-  } catch (error) {
-    errorHandler('it went wrong.', request, response);
-  }
+              response.send(locationData);
+            })
+
+        } catch (error) {
+          errorHandler('it went wrong.', request, response);
+        }
+
+      }
+    });
 }
+
+
 
 // Location Object Constructor
 function Location(city, geoData) {
